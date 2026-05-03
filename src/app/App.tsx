@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Mic, Square, Trash2, Radio, Download, Copy, Check } from 'lucide-react';
+import { websocketService } from '../services/websocketService';
+import { audioCaptureService } from '../services/audioCaptureService';
 
 export default function App() {
   const [isRecording, setIsRecording] = useState(false);
@@ -7,8 +9,11 @@ export default function App() {
   const [buffer, setBuffer] = useState('');
   const [recordingTime, setRecordingTime] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const audioBufferRef = useRef<Float32Array[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -94,6 +99,52 @@ export default function App() {
     };
   }, []);
 
+  // Initialize WebSocket connection on mount
+  useEffect(() => {
+    const initializeConnection = async () => {
+      try {
+        // Try to connect to backend
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+        
+        websocketService.setCallbacks({
+          onConnect: () => {
+            console.log('Connected to backend');
+            setIsConnected(true);
+            setConnectionError(null);
+          },
+          onDisconnect: () => {
+            console.log('Disconnected from backend');
+            setIsConnected(false);
+          },
+          onTranscription: (text: string, isSuccess: boolean) => {
+            if (isSuccess && text) {
+              console.log('Received transcription:', text);
+              setBuffer((prev) => prev + text + ' ');
+            }
+          },
+          onError: (error: string) => {
+            console.error('WebSocket error:', error);
+            setConnectionError(error);
+            setIsConnected(false);
+          },
+        });
+
+        await websocketService.connect(backendUrl);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to connect to backend';
+        console.error('Connection error:', errorMessage);
+        setConnectionError(errorMessage);
+        setIsConnected(false);
+      }
+    };
+
+    initializeConnection();
+
+    return () => {
+      websocketService.disconnect();
+    };
+  }, []);
+
   useEffect(() => {
     if (transcriptRef.current) {
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
@@ -120,17 +171,69 @@ export default function App() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleStart = () => {
-    setIsRecording(true);
-    setBuffer('');
+  const handleStart = async () => {
+    if (!isConnected) {
+      setConnectionError('Not connected to backend. Please wait for connection.');
+      return;
+    }
+
+    try {
+      setIsRecording(true);
+      setBuffer('');
+      setRecordingTime(0);
+      audioBufferRef.current = [];
+
+      await audioCaptureService.startRecording({
+        onAudioData: (audioData: Float32Array) => {
+          // Store audio chunks and periodically send to backend
+          audioBufferRef.current.push(audioData);
+          
+          // Send to backend every 0.5 seconds or so
+          if (audioBufferRef.current.length >= 1) {
+            const combined = audioBufferRef.current.reduce((acc, chunk) => {
+              const result = new Float32Array(acc.length + chunk.length);
+              result.set(acc);
+              result.set(chunk, acc.length);
+              return result;
+            });
+            websocketService.sendAudioStream(combined);
+            audioBufferRef.current = [];
+          }
+        },
+        onError: (error: string) => {
+          console.error('Audio capture error:', error);
+          setConnectionError(error);
+          setIsRecording(false);
+        },
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to start recording';
+      console.error('Start recording error:', errorMessage);
+      setConnectionError(errorMessage);
+      setIsRecording(false);
+    }
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
     setIsRecording(false);
-    if (buffer.trim()) {
-      setTranscript((prev) => prev + buffer);
-      setBuffer('');
+    audioCaptureService.stopRecording();
+    
+    // Send any remaining audio
+    if (audioBufferRef.current.length > 0) {
+      const combined = audioBufferRef.current.reduce((acc, chunk) => {
+        const result = new Float32Array(acc.length + chunk.length);
+        result.set(acc);
+        result.set(chunk, acc.length);
+        return result;
+      });
+      websocketService.sendAudioStream(combined);
+      audioBufferRef.current = [];
     }
+    
+    // Request transcription of buffered audio
+    setTimeout(() => {
+      websocketService.requestTranscription();
+    }, 100);
   };
 
   const handleClear = () => {
@@ -161,25 +264,6 @@ export default function App() {
     }
   };
 
-  const handleTranscribe = () => {
-    const demoText = [
-      'This is a sample transcription. ',
-      'VoiceFlow captures your voice in real-time with precision. ',
-      'The AI processes audio with high accuracy and speed. ',
-      'Perfect for meetings, interviews, lectures, and personal notes. ',
-      'Advanced neural networks ensure clear and accurate results. ',
-    ];
-    const randomText = demoText[Math.floor(Math.random() * demoText.length)];
-    setBuffer((prev) => prev + randomText);
-  };
-
-  useEffect(() => {
-    if (isRecording) {
-      const interval = setInterval(handleTranscribe, 2500);
-      return () => clearInterval(interval);
-    }
-  }, [isRecording]);
-
   const wordCount = (transcript + buffer).trim().split(/\s+/).filter(Boolean).length;
 
   return (
@@ -193,10 +277,15 @@ export default function App() {
       <div className="relative z-10 min-h-screen flex flex-col">
         <header className="pt-6 sm:pt-10 pb-6 px-4 sm:px-6 lg:px-8">
           <div className="max-w-7xl mx-auto text-center">
+            {connectionError && (
+              <div className="mb-4 px-4 py-2 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
+                {connectionError}
+              </div>
+            )}
             <div className="inline-flex items-center gap-3 mb-2">
               <div className="relative">
-                <div className="w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
-                <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-primary animate-ping" />
+                <div className={`w-2.5 h-2.5 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.8)] ${isConnected ? 'bg-primary' : 'bg-destructive'}`} />
+                <div className={`absolute inset-0 w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-primary animate-ping' : 'bg-destructive'}`} />
               </div>
               <h1 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-extralight tracking-tight">
                 <span className="bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
@@ -206,6 +295,9 @@ export default function App() {
             </div>
             <p className="text-muted-foreground/60 text-xs sm:text-sm tracking-[0.25em] uppercase font-light">
               Neural Voice Transcription System
+            </p>
+            <p className="text-xs mt-2 text-muted-foreground/50">
+              {isConnected ? '✓ Connected to Backend' : '✗ Connecting to Backend...'}
             </p>
           </div>
         </header>
@@ -259,7 +351,8 @@ export default function App() {
                       {!isRecording ? (
                         <button
                           onClick={handleStart}
-                          className="group relative px-12 py-6 bg-gradient-to-r from-primary via-secondary to-primary bg-size-200 bg-pos-0 hover:bg-pos-100 rounded-2xl overflow-hidden transition-all duration-500 hover:scale-105 active:scale-95 hover:shadow-[0_0_50px_rgba(99,102,241,0.7)] shadow-[0_4px_20px_rgba(99,102,241,0.3)]"
+                          disabled={!isConnected}
+                          className="group relative px-12 py-6 bg-gradient-to-r from-primary via-secondary to-primary bg-size-200 bg-pos-0 hover:bg-pos-100 rounded-2xl overflow-hidden transition-all duration-500 hover:scale-105 active:scale-95 hover:shadow-[0_0_50px_rgba(99,102,241,0.7)] shadow-[0_4px_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                         >
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
                           <div className="relative flex items-center gap-3">
