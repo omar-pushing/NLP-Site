@@ -24,9 +24,10 @@ class WebSocketService {
           reconnection: true,
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
-          reconnectionAttempts: 5,
-          transports: ['polling', 'websocket'], // polling first for Railway compatibility
-          upgrade: true,
+          reconnectionAttempts: 10,
+          transports: ['websocket'],  // WebSocket only — no polling
+          forceNew: true,
+          timeout: 20000,
         });
 
         this.socket.on('connect', () => {
@@ -46,8 +47,6 @@ class WebSocketService {
         });
 
         this.socket.on('buffer_update', (data: { buffer_size?: number; samples?: number }) => {
-          console.log('Buffer update:', data);
-          // Backend sends buffer_size; support both field names
           const count = data.buffer_size ?? data.samples ?? 0;
           this.callbacks.onBufferUpdate?.(count);
         });
@@ -78,8 +77,6 @@ class WebSocketService {
       console.warn('Socket not connected');
       return;
     }
-
-    // Convert Float32Array to Buffer-like data for transmission
     const audioBytes = this.float32ToBytes(audioBuffer);
     this.socket.emit('audio_stream', { audio: audioBytes });
   }
