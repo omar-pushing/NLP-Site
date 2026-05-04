@@ -196,8 +196,8 @@ export default function App() {
         onAudioData: (audioData: Float32Array) => {
           audioBufferRef.current.push(audioData);
           
-          // Send every 10 chunks (~0.5 seconds of audio) to avoid flooding
-          if (audioBufferRef.current.length >= 10) {
+          // Send every 4 chunks
+          if (audioBufferRef.current.length >= 4) {
             const combined = audioBufferRef.current.reduce((acc, chunk) => {
               const result = new Float32Array(acc.length + chunk.length);
               result.set(acc);
