@@ -74,9 +74,12 @@ class WebSocketService {
 
   sendAudioStream(audioBuffer: Float32Array): void {
     if (!this.socket?.connected) return;
-    const buffer = new ArrayBuffer(audioBuffer.length * 4);
-    new Float32Array(buffer).set(audioBuffer);
-    this.socket.emit('audio_stream', { audio: buffer });
+    // Send as a plain Uint8Array (raw bytes view of the float32 data).
+    // Wrapping in ArrayBuffer and passing it directly causes Socket.IO to
+    // serialise it as a plain JS object, which makes bytes(data['audio'])
+    // fail silently on the Python side and leaves the buffer empty.
+    const uint8 = new Uint8Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength);
+    this.socket.emit('audio_stream', { audio: uint8 });
   }
 
   requestTranscription(): void {

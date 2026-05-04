@@ -118,8 +118,10 @@ export default function App() {
           },
           onTranscription: (text: string, isSuccess: boolean) => {
             console.log('Received transcription:', text, isSuccess);
-            if (isSuccess && text && text !== 'No audio to transcribe') {
-              setBuffer((prev) => prev + text.trim() + ' ');
+            if (isSuccess && text && text.trim() !== 'No audio to transcribe') {
+              const trimmed = text.trim() + ' ';
+              setBuffer('');
+              setTranscript((prev) => prev + trimmed);
             }
           },
           onError: (error: string) => {
@@ -251,10 +253,11 @@ export default function App() {
       audioBufferRef.current = [];
     }
     
-    // Wait longer to ensure all audio is received and buffered on backend before transcribing
+    // Wait for the last audio chunks to arrive at the backend before requesting transcription.
+    // Railway's proxy adds latency, so 2500 ms is safer than 1500 ms.
     setTimeout(() => {
       websocketService.requestTranscription();
-    }, 1500);
+    }, 2500);
   };
 
   const handleClear = () => {
@@ -310,7 +313,7 @@ export default function App() {
                 <div className={`w-2.5 h-2.5 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.8)] ${isConnected ? 'bg-primary' : 'bg-destructive'}`} />
                 <div className={`absolute inset-0 w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-primary animate-ping' : 'bg-destructive'}`} />
               </div>
-              <h1 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-extralight tracking-tight">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extralight tracking-tight">
                 <span className="bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
                   VoiceFlow
                 </span>
@@ -327,13 +330,13 @@ export default function App() {
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 pb-8">
           <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6">
               <div className="lg:col-span-2 space-y-6">
-                <div className="bg-card/20 backdrop-blur-2xl border border-primary/20 rounded-3xl p-8 sm:p-10 shadow-[0_8px_40px_rgba(99,102,241,0.12)] hover:shadow-[0_8px_60px_rgba(99,102,241,0.18)] transition-shadow duration-500">
+                <div className="bg-card/20 backdrop-blur-2xl border border-primary/20 rounded-3xl p-6 sm:p-8 shadow-[0_8px_40px_rgba(99,102,241,0.12)] hover:shadow-[0_8px_60px_rgba(99,102,241,0.18)] transition-shadow duration-500">
                   <div className="flex flex-col items-center gap-10">
                     <div className="relative group">
                       <div
-                        className={`w-48 h-48 sm:w-56 sm:h-56 rounded-full flex items-center justify-center transition-all duration-700 ${
+                        className={`w-36 h-36 sm:w-44 sm:h-44 rounded-full flex items-center justify-center transition-all duration-700 ${
                           isRecording
                             ? 'bg-gradient-to-br from-primary/20 via-secondary/20 to-accent/20 shadow-[0_0_80px_rgba(99,102,241,0.5)]'
                             : 'bg-gradient-to-br from-muted/5 to-muted/10 border-2 border-border/20'
@@ -341,13 +344,13 @@ export default function App() {
                       >
                         {isRecording ? (
                           <div className="relative">
-                            <Radio className="w-24 h-24 sm:w-28 sm:h-28 text-primary drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]" />
+                            <Radio className="w-16 h-16 sm:w-20 sm:h-20 text-primary drop-shadow-[0_0_15px_rgba(99,102,241,0.8)]" />
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="w-32 h-32 sm:w-36 sm:h-36 border-2 border-primary/30 rounded-full animate-ping" />
+                              <div className="w-24 h-24 sm:w-28 sm:h-28 border-2 border-primary/30 rounded-full animate-ping" />
                             </div>
                           </div>
                         ) : (
-                          <Mic className="w-24 h-24 sm:w-28 sm:h-28 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors duration-300" />
+                          <Mic className="w-16 h-16 sm:w-20 sm:h-20 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors duration-300" />
                         )}
                       </div>
                       {isRecording && (
@@ -359,7 +362,7 @@ export default function App() {
                     </div>
 
                     <div className="text-center space-y-5 w-full">
-                      <div className="text-6xl sm:text-7xl font-extralight text-foreground tabular-nums tracking-tighter">
+                      <div className="text-5xl sm:text-6xl font-extralight text-foreground tabular-nums tracking-tighter">
                         {formatTime(recordingTime)}
                       </div>
                       <div className="flex items-center justify-center gap-3">
@@ -375,23 +378,23 @@ export default function App() {
                         <button
                           onClick={handleStart}
                           disabled={!isConnected}
-                          className="group relative px-12 py-6 bg-gradient-to-r from-primary via-secondary to-primary bg-size-200 bg-pos-0 hover:bg-pos-100 rounded-2xl overflow-hidden transition-all duration-500 hover:scale-105 active:scale-95 hover:shadow-[0_0_50px_rgba(99,102,241,0.7)] shadow-[0_4px_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                          className="group relative px-8 py-4 bg-gradient-to-r from-primary via-secondary to-primary bg-size-200 bg-pos-0 hover:bg-pos-100 rounded-2xl overflow-hidden transition-all duration-500 hover:scale-105 active:scale-95 hover:shadow-[0_0_50px_rgba(99,102,241,0.7)] shadow-[0_4px_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                         >
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
                           <div className="relative flex items-center gap-3">
-                            <Mic className="w-7 h-7" />
-                            <span className="text-lg font-light tracking-wide">Start Recording</span>
+                            <Mic className="w-5 h-5" />
+                            <span className="text-base font-light tracking-wide">Start Recording</span>
                           </div>
                         </button>
                       ) : (
                         <button
                           onClick={handleStop}
-                          className="group relative px-12 py-6 bg-gradient-to-r from-destructive to-destructive/80 rounded-2xl overflow-hidden transition-all duration-500 hover:scale-105 active:scale-95 hover:shadow-[0_0_50px_rgba(239,68,68,0.7)] shadow-[0_4px_20px_rgba(239,68,68,0.3)]"
+                          className="group relative px-8 py-4 bg-gradient-to-r from-destructive to-destructive/80 rounded-2xl overflow-hidden transition-all duration-500 hover:scale-105 active:scale-95 hover:shadow-[0_0_50px_rgba(239,68,68,0.7)] shadow-[0_4px_20px_rgba(239,68,68,0.3)]"
                         >
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
                           <div className="relative flex items-center gap-3">
-                            <Square className="w-7 h-7" />
-                            <span className="text-lg font-light tracking-wide">Stop</span>
+                            <Square className="w-5 h-5" />
+                            <span className="text-base font-light tracking-wide">Stop</span>
                           </div>
                         </button>
                       )}
@@ -454,7 +457,7 @@ export default function App() {
                 </div>
                 <div
                   ref={transcriptRef}
-                  className="flex-1 bg-background/40 border border-border/10 rounded-2xl p-6 sm:p-8 overflow-y-auto min-h-[450px] lg:min-h-[600px] scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent hover:scrollbar-thumb-primary/30"
+                  className="flex-1 bg-background/40 border border-border/10 rounded-2xl p-5 sm:p-6 overflow-y-auto min-h-[350px] lg:min-h-[500px] scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent hover:scrollbar-thumb-primary/30"
                 >
                   <div className="space-y-6">
                     {transcript && (
