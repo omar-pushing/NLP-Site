@@ -117,9 +117,9 @@ export default function App() {
             setIsConnected(false);
           },
           onTranscription: (text: string, isSuccess: boolean) => {
-            if (isSuccess && text) {
-              console.log('Received transcription:', text);
-              setBuffer((prev) => prev + text + ' ');
+            console.log('Received transcription:', text, isSuccess);
+            if (isSuccess && text && text !== 'No audio to transcribe') {
+              setBuffer((prev) => prev + text.trim() + ' ');
             }
           },
           onError: (error: string) => {
@@ -194,11 +194,10 @@ export default function App() {
 
       await audioCaptureService.startRecording({
         onAudioData: (audioData: Float32Array) => {
-          // Store audio chunks and periodically send to backend
           audioBufferRef.current.push(audioData);
           
-          // Send to backend every 0.5 seconds or so
-          if (audioBufferRef.current.length >= 1) {
+          // Send every 10 chunks (~0.5 seconds of audio) to avoid flooding
+          if (audioBufferRef.current.length >= 10) {
             const combined = audioBufferRef.current.reduce((acc, chunk) => {
               const result = new Float32Array(acc.length + chunk.length);
               result.set(acc);
@@ -252,10 +251,10 @@ export default function App() {
       audioBufferRef.current = [];
     }
     
-    // Final transcription request
+    // Wait longer to ensure all audio is received and buffered on backend before transcribing
     setTimeout(() => {
       websocketService.requestTranscription();
-    }, 300);
+    }, 1500);
   };
 
   const handleClear = () => {
