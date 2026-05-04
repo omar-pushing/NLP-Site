@@ -11,7 +11,7 @@ interface WebSocketCallbacks {
 class WebSocketService {
   private socket: Socket | null = null;
   private callbacks: WebSocketCallbacks = {};
-  private backendUrl: string = 'http://localhost:5000';
+  private backendUrl: string = 'http://localhost:8080';
 
   connect(backendUrl?: string): Promise<void> {
     if (backendUrl) {
@@ -25,9 +25,11 @@ class WebSocketService {
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
           reconnectionAttempts: 10,
-          transports: ['polling', 'websocket'], // polling first per Railway docs
-          forceNew: true,
+          // polling first then upgrade — required for Railway proxy
+          transports: ['polling', 'websocket'],
           timeout: 20000,
+          forceNew: true,
+          path: '/socket.io/',
         });
 
         this.socket.on('connect', () => {
@@ -37,12 +39,11 @@ class WebSocketService {
         });
 
         this.socket.on('disconnect', (reason) => {
-          console.log('Disconnected from backend:', reason);
+          console.log('Disconnected:', reason);
           this.callbacks.onDisconnect?.();
         });
 
         this.socket.on('transcription_result', (data: { text: string; success: boolean }) => {
-          console.log('Transcription result:', data);
           this.callbacks.onTranscription?.(data.text, data.success);
         });
 
@@ -52,17 +53,16 @@ class WebSocketService {
         });
 
         this.socket.on('connect_error', (error: Error) => {
-          console.error('Connection error:', error);
+          console.error('Connection error:', error.message);
           this.callbacks.onError?.(error.message);
           reject(error);
         });
 
         this.socket.on('error', (error: any) => {
-          console.error('Socket error:', error);
-          this.callbacks.onError?.(error);
+          this.callbacks.onError?.(String(error));
         });
+
       } catch (error) {
-        console.error('Failed to create socket connection:', error);
         reject(error);
       }
     });
@@ -73,27 +73,19 @@ class WebSocketService {
   }
 
   sendAudioStream(audioBuffer: Float32Array): void {
-    if (!this.socket?.connected) {
-      console.warn('Socket not connected');
-      return;
-    }
-    const audioBytes = this.float32ToBytes(audioBuffer);
-    this.socket.emit('audio_stream', { audio: audioBytes });
+    if (!this.socket?.connected) return;
+    const buffer = new ArrayBuffer(audioBuffer.length * 4);
+    new Float32Array(buffer).set(audioBuffer);
+    this.socket.emit('audio_stream', { audio: buffer });
   }
 
   requestTranscription(): void {
-    if (!this.socket?.connected) {
-      console.warn('Socket not connected');
-      return;
-    }
+    if (!this.socket?.connected) return;
     this.socket.emit('transcribe_request', {});
   }
 
   clearBuffer(): void {
-    if (!this.socket?.connected) {
-      console.warn('Socket not connected');
-      return;
-    }
+    if (!this.socket?.connected) return;
     this.socket.emit('clear_buffer', {});
   }
 
@@ -102,16 +94,7 @@ class WebSocketService {
   }
 
   disconnect(): void {
-    if (this.socket) {
-      this.socket.disconnect();
-    }
-  }
-
-  private float32ToBytes(float32Array: Float32Array): ArrayBuffer {
-    const buffer = new ArrayBuffer(float32Array.length * 4);
-    const view = new Float32Array(buffer);
-    view.set(float32Array);
-    return buffer;
+    this.socket?.disconnect();
   }
 }
 
