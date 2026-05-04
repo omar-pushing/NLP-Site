@@ -25,7 +25,7 @@ class WebSocketService {
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
           reconnectionAttempts: 10,
-          transports: ['websocket'],  // WebSocket only — no polling
+          transports: ['polling', 'websocket'], // polling first per Railway docs
           forceNew: true,
           timeout: 20000,
         });
