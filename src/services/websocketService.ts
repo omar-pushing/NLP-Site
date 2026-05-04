@@ -1,7 +1,13 @@
 import { io, Socket } from 'socket.io-client';
 
+interface TranscriptionResult {
+  text: string;
+  success: boolean;
+  final: boolean;  // true = recording stopped, this is the last chunk
+}
+
 interface WebSocketCallbacks {
-  onTranscription?: (text: string, isSuccess: boolean) => void;
+  onTranscription?: (result: TranscriptionResult) => void;
   onBufferUpdate?: (samples: number) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
@@ -14,9 +20,7 @@ class WebSocketService {
   private backendUrl: string = 'http://localhost:8080';
 
   connect(backendUrl?: string): Promise<void> {
-    if (backendUrl) {
-      this.backendUrl = backendUrl;
-    }
+    if (backendUrl) this.backendUrl = backendUrl;
 
     return new Promise((resolve, reject) => {
       try {
@@ -25,7 +29,6 @@ class WebSocketService {
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
           reconnectionAttempts: 10,
-          // polling first then upgrade — required for Railway proxy
           transports: ['polling', 'websocket'],
           timeout: 20000,
           forceNew: true,
@@ -33,18 +36,19 @@ class WebSocketService {
         });
 
         this.socket.on('connect', () => {
-          console.log('Connected to backend');
+          console.log('[WS] Connected');
           this.callbacks.onConnect?.();
           resolve();
         });
 
         this.socket.on('disconnect', (reason) => {
-          console.log('Disconnected:', reason);
+          console.log('[WS] Disconnected:', reason);
           this.callbacks.onDisconnect?.();
         });
 
-        this.socket.on('transcription_result', (data: { text: string; success: boolean }) => {
-          this.callbacks.onTranscription?.(data.text, data.success);
+        this.socket.on('transcription_result', (data: TranscriptionResult) => {
+          console.log('[WS] transcription_result', data);
+          this.callbacks.onTranscription?.(data);
         });
 
         this.socket.on('buffer_update', (data: { buffer_size?: number; samples?: number }) => {
@@ -53,12 +57,12 @@ class WebSocketService {
         });
 
         this.socket.on('connect_error', (error: Error) => {
-          console.error('Connection error:', error.message);
+          console.error('[WS] connect_error:', error.message);
           this.callbacks.onError?.(error.message);
           reject(error);
         });
 
-        this.socket.on('error', (error: any) => {
+        this.socket.on('error', (error: unknown) => {
           this.callbacks.onError?.(String(error));
         });
 
@@ -74,14 +78,24 @@ class WebSocketService {
 
   sendAudioStream(audioBuffer: Float32Array): void {
     if (!this.socket?.connected) return;
-    // Send as a plain Uint8Array (raw bytes view of the float32 data).
-    // Wrapping in ArrayBuffer and passing it directly causes Socket.IO to
-    // serialise it as a plain JS object, which makes bytes(data['audio'])
-    // fail silently on the Python side and leaves the buffer empty.
-    const uint8 = new Uint8Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.byteLength);
+    // Send as Uint8Array — Socket.IO transmits this as clean binary.
+    // Passing a raw ArrayBuffer gets serialised as a JS object on the wire,
+    // which makes bytes(data['audio']) fail silently on the Python side.
+    const uint8 = new Uint8Array(
+      audioBuffer.buffer,
+      audioBuffer.byteOffset,
+      audioBuffer.byteLength,
+    );
     this.socket.emit('audio_stream', { audio: uint8 });
   }
 
+  /** Tell the backend the user has stopped — triggers a final flush + transcription. */
+  stopRecording(): void {
+    if (!this.socket?.connected) return;
+    this.socket.emit('stop_recording', {});
+  }
+
+  /** Legacy manual trigger (kept for compatibility). */
   requestTranscription(): void {
     if (!this.socket?.connected) return;
     this.socket.emit('transcribe_request', {});
@@ -93,7 +107,7 @@ class WebSocketService {
   }
 
   isConnected(): boolean {
-    return this.socket?.connected || false;
+    return this.socket?.connected ?? false;
   }
 
   disconnect(): void {
@@ -102,4 +116,4 @@ class WebSocketService {
 }
 
 export const websocketService = new WebSocketService();
-export type { WebSocketCallbacks };
+export type { WebSocketCallbacks, TranscriptionResult };
