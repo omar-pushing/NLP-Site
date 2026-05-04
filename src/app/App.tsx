@@ -171,6 +171,8 @@ export default function App() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const transcriptionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const handleStart = async () => {
     if (!isConnected) {
       setConnectionError('Not connected to backend. Please wait for connection.');
@@ -182,6 +184,13 @@ export default function App() {
       setBuffer('');
       setRecordingTime(0);
       audioBufferRef.current = [];
+
+      // Auto-transcribe every 3 seconds while recording
+      transcriptionIntervalRef.current = setInterval(() => {
+        if (websocketService.isConnected()) {
+          websocketService.requestTranscription();
+        }
+      }, 3000);
 
       await audioCaptureService.startRecording({
         onAudioData: (audioData: Float32Array) => {
@@ -204,6 +213,9 @@ export default function App() {
           console.error('Audio capture error:', error);
           setConnectionError(error);
           setIsRecording(false);
+          if (transcriptionIntervalRef.current) {
+            clearInterval(transcriptionIntervalRef.current);
+          }
         },
       });
     } catch (error) {
@@ -211,11 +223,21 @@ export default function App() {
       console.error('Start recording error:', errorMessage);
       setConnectionError(errorMessage);
       setIsRecording(false);
+      if (transcriptionIntervalRef.current) {
+        clearInterval(transcriptionIntervalRef.current);
+      }
     }
   };
 
   const handleStop = async () => {
     setIsRecording(false);
+    
+    // Stop periodic transcription
+    if (transcriptionIntervalRef.current) {
+      clearInterval(transcriptionIntervalRef.current);
+      transcriptionIntervalRef.current = null;
+    }
+
     audioCaptureService.stopRecording();
     
     // Send any remaining audio
@@ -230,14 +252,16 @@ export default function App() {
       audioBufferRef.current = [];
     }
     
-    // Request transcription of buffered audio
+    // Final transcription request
     setTimeout(() => {
       websocketService.requestTranscription();
-    }, 100);
+    }, 300);
   };
 
   const handleClear = () => {
     setBuffer('');
+    setTranscript('');
+    websocketService.clearBuffer();
   };
 
   const handleCopy = async () => {

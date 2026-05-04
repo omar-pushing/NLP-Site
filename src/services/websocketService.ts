@@ -44,9 +44,11 @@ class WebSocketService {
           this.callbacks.onTranscription?.(data.text, data.success);
         });
 
-        this.socket.on('buffer_update', (data: { samples: number }) => {
+        this.socket.on('buffer_update', (data: { buffer_size?: number; samples?: number }) => {
           console.log('Buffer update:', data);
-          this.callbacks.onBufferUpdate?.(data.samples);
+          // Backend sends buffer_size; support both field names
+          const count = data.buffer_size ?? data.samples ?? 0;
+          this.callbacks.onBufferUpdate?.(count);
         });
 
         this.socket.on('connect_error', (error: Error) => {
