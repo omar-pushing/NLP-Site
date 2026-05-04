@@ -75,6 +75,8 @@ export default function App() {
     return () => { cancelAnimationFrame(animationFrame); window.removeEventListener('resize', handleResize); };
   }, []);
 
+  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // ── WebSocket connection ───────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
@@ -88,17 +90,19 @@ export default function App() {
           },
           onDisconnect: () => setIsConnected(false),
 
-          /**
-           * Called for every chunk the backend transcribes (final=false)
-           * AND once when the session is fully done (final=true, text may be '').
-           */
           onTranscription: (result: TranscriptionResult) => {
             console.log('[App] transcription_result', result);
+            // Append any non-empty text
             if (result.success && result.text && result.text.trim()) {
               setTranscript((prev) => prev + result.text.trim() + ' ');
             }
+            // Always clear processing state on final, regardless of whether text is empty
             if (result.final) {
               setIsProcessing(false);
+              if (processingTimeoutRef.current) {
+                clearTimeout(processingTimeoutRef.current);
+                processingTimeoutRef.current = null;
+              }
             }
           },
 
@@ -199,6 +203,14 @@ export default function App() {
     // Tell the backend to flush its buffer and transcribe the remainder.
     // A small delay lets the last audio_stream packet arrive first.
     setTimeout(() => websocketService.stopRecording(), 300);
+
+    // Safety net: if the backend never sends final:true (e.g. network drop),
+    // clear the processing state after 30 s so the UI doesn't stay stuck.
+    if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
+    processingTimeoutRef.current = setTimeout(() => {
+      setIsProcessing(false);
+      processingTimeoutRef.current = null;
+    }, 30000);
   };
 
   const handleClear = () => {
