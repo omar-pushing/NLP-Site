@@ -153,8 +153,13 @@ export default function App() {
       return;
     }
     try {
-      setIsRecording(true);
+      // Cancel any in-flight processing from a previous session
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+        processingTimeoutRef.current = null;
+      }
       setIsProcessing(false);
+      setIsRecording(true);
       setRecordingTime(0);
       audioBufferRef.current = [];
 
@@ -343,7 +348,7 @@ export default function App() {
                       {!isRecording ? (
                         <button
                           onClick={handleStart}
-                          disabled={!isConnected || isProcessing}
+                          disabled={!isConnected}
                           className="group relative px-8 py-4 bg-gradient-to-r from-primary via-secondary to-primary bg-size-200 bg-pos-0 hover:bg-pos-100 rounded-2xl overflow-hidden transition-all duration-500 hover:scale-105 active:scale-95 hover:shadow-[0_0_50px_rgba(99,102,241,0.7)] shadow-[0_4px_20px_rgba(99,102,241,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                         >
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
