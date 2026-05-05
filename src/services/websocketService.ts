@@ -24,15 +24,19 @@ class WebSocketService {
 
     return new Promise((resolve, reject) => {
       try {
+        // Use websocket-first; fall back to polling only if needed.
+        // This avoids getting stuck on long-polling (which never upgrades
+        // behind some reverse-proxies like Render's free tier).
         this.socket = io(this.backendUrl, {
           reconnection: true,
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
           reconnectionAttempts: 10,
-          transports: ['polling', 'websocket'],
+          transports: ['websocket', 'polling'],
           timeout: 20000,
           forceNew: true,
           path: '/socket.io/',
+          upgrade: true,
         });
 
         this.socket.on('connect', () => {
