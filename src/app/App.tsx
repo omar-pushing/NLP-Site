@@ -81,7 +81,9 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
       try {
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
+        // Normalise: strip trailing slash so Socket.IO path is always correct
+        const rawUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080');
+        const backendUrl = rawUrl.replace(/\/+$/, '');
 
         websocketService.setCallbacks({
           onConnect: () => {
